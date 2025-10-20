@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>fastbot_waypoints</name>
+  <version>0.0.1</version>
+  <description>Fastbot waypoint action server</description>
+  <maintainer email="you@example.com">you</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- Build tool -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Action arayüzü üretimi -->
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <!-- Çalışma bağımlılıkları -->
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>tf2</depend>
+
+  <!-- BUNU EKLE: arayüz üreten paketler bu gruba üye olmalı -->
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
