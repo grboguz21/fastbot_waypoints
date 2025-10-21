@@ -11,7 +11,6 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    # Ortam değişkenleri ile özelleştirilebilir
     pkg_name       = os.getenv('PKG_NAME', 'fastbot_waypoints')
     server_exec    = os.getenv('SERVER_EXEC', 'fastbot_action_server')   # ros2 run fastbot_waypoints fastbot_action_server
     action_name    = os.getenv('ACTION_NAME', '/fastbot_as')
@@ -21,10 +20,9 @@ def generate_launch_description():
     timeout_sec    = os.getenv('TIMEOUT_SEC', '40')
     cmd_vel_topic  = os.getenv('CMD_VEL_TOPIC', 'fastbot/cmd_vel')
     odom_topic     = os.getenv('ODOM_TOPIC', '/fastbot/odom')
-    yaw_precision  = os.getenv('YAW_PRECISION', f"{3.1415926535/90.0}")  # ~2 deg
-    dist_precision = os.getenv('DIST_PRECISION', '0.10')                 # 10 cm default (kodda 0.10)
+    yaw_precision  = os.getenv('YAW_PRECISION', f"{3.1415926535/90.0}")
+    dist_precision = os.getenv('DIST_PRECISION', '0.10')                 
 
-    # Server node (doğrudan executable olarak)
     server_node = Node(
         package=pkg_name,
         executable=server_exec,
@@ -55,7 +53,6 @@ def generate_launch_description():
         output='screen'
     )
 
-    # Tester bittiğinde tüm sistemi kapat
     shutdown_on_tester_exit = RegisterEventHandler(
         OnProcessExit(
             target_action=tester,
