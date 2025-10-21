@@ -47,5 +47,16 @@ target_link_libraries(fastbot_action_server
 install(TARGETS fastbot_action_server
   DESTINATION lib/${PROJECT_NAME})
 
+install(DIRECTORY
+ launch
+ DESTINATION share/${PROJECT_NAME}/
+)
+
 ament_export_dependencies(rosidl_default_runtime)
+
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  add_subdirectory(src/fastbot_waypoints)
+endif()
 ament_package()
