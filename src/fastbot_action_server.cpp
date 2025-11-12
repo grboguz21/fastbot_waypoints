@@ -26,8 +26,9 @@ public:
         declare_parameter<std::string>("cmd_vel_topic", "fastbot/cmd_vel");
     odom_topic_ = declare_parameter<std::string>("odom_topic", "/fastbot/odom");
     yaw_precision_ =
-        declare_parameter<double>("yaw_precision", M_PI / 90.0);         // ~2°
-    dist_precision_ = declare_parameter<double>("dist_precision", 0.10); // 5 cm
+        declare_parameter<double>("yaw_precision", M_PI / 90.0); // ~2°
+    dist_precision_ =
+        declare_parameter<double>("dist_precision", 0.10); // 10 cm
 
     pub_cmd_ = create_publisher<geometry_msgs::msg::Twist>(cmd_vel_topic_, 10);
     sub_odom_ = create_subscription<nav_msgs::msg::Odometry>(
@@ -47,20 +48,18 @@ public:
   }
 
 private:
-  // State
   geometry_msgs::msg::Point position_;
   double yaw_{0.0};
   std::string state_{"idle"};
 
-  // ROS I/O
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_cmd_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;
   rclcpp_action::Server<Waypoint>::SharedPtr server_;
 
-  // Params
   std::string cmd_vel_topic_, odom_topic_;
   double yaw_precision_, dist_precision_;
 
+  // ---- Odometry callback ----
   void odomCb(const nav_msgs::msg::Odometry::SharedPtr msg) {
     position_ = msg->pose.pose.position;
     const auto &q = msg->pose.pose.orientation;
@@ -70,11 +69,13 @@ private:
     yaw_ = yaw;
   }
 
+  // ---- Goal handling ----
   rclcpp_action::GoalResponse
   handleGoal(const rclcpp_action::GoalUUID &,
              std::shared_ptr<const Waypoint::Goal> goal) {
     (void)goal;
-    RCLCPP_INFO(get_logger(), "Goal received");
+    RCLCPP_INFO(get_logger(), "Goal received (%.2f, %.2f)", goal->position.x,
+                goal->position.y);
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
   }
 
@@ -93,11 +94,18 @@ private:
         .detach();
   }
 
+  // ---- Robot stop ----
   void stop() {
     geometry_msgs::msg::Twist z;
     z.linear.x = 0.0;
     z.angular.z = 0.0;
-    pub_cmd_->publish(z);
+
+    // 🔁 birkaç defa yayınla (garanti dursun)
+    for (int i = 0; i < 5; ++i) {
+      pub_cmd_->publish(z);
+      rclcpp::sleep_for(std::chrono::milliseconds(100));
+    }
+    RCLCPP_INFO(get_logger(), "Robot stopped (zero velocity published 5x).");
   }
 
   void execute(const std::shared_ptr<GoalHandleWaypoint> goal_handle) {
@@ -109,51 +117,83 @@ private:
     auto result = std::make_shared<Waypoint::Result>();
 
     rclcpp::Rate rate(25.0);
+    bool success = false;
+    rclcpp::Time start_time = now();
 
-    while (rclcpp::ok()) {
-      if (goal_handle->is_canceling()) {
-        RCLCPP_INFO(get_logger(), "Canceled");
-        stop();
-        goal_handle->canceled(result);
-        return;
+    try {
+      while (rclcpp::ok()) {
+        if (goal_handle->is_canceling()) {
+          RCLCPP_INFO(get_logger(), "Canceled");
+          stop();
+          goal_handle->canceled(result);
+          return;
+        }
+
+        // ⏱ Timeout
+        if ((now() - start_time).seconds() > 45.0) {
+          RCLCPP_ERROR(get_logger(), "Timeout (15s) reached! Aborting goal.");
+          stop();
+          result->success = false;
+          goal_handle->abort(result);
+          return;
+        }
+
+        // --- Hedef hataları ---
+        const double dx = goal->position.x - position_.x;
+        const double dy = goal->position.y - position_.y;
+        const double desired_yaw = std::atan2(dy, dx);
+        const double err_pos = std::hypot(dx, dy);
+        double err_yaw = std::atan2(std::sin(desired_yaw - yaw_),
+                                    std::cos(desired_yaw - yaw_));
+
+        geometry_msgs::msg::Twist cmd;
+
+        // --- 1. Aşama: hedefe bakana kadar dön ---
+        if (std::fabs(err_yaw) > yaw_precision_) {
+          state_ = "fix yaw";
+          cmd.linear.x = 0.0;
+          cmd.angular.z = (err_yaw > 0.0) ? 0.6 : -0.6;
+        }
+
+        // --- 2. Aşama: hizalandıysa ileri git ---
+        else if (err_pos > dist_precision_) {
+          state_ = "go to point";
+          cmd.linear.x = 0.5;
+          cmd.angular.z = 0.0;
+        }
+
+        // --- 3. Hedefe ulaştıysa ---
+        else {
+          state_ = "goal reached";
+          success = true;
+          stop();
+          break;
+        }
+
+        pub_cmd_->publish(cmd);
+        feedback->current = position_;
+        feedback->state = state_;
+        goal_handle->publish_feedback(feedback);
+        rate.sleep();
       }
-
-      const double dx = goal->position.x - position_.x;
-      const double dy = goal->position.y - position_.y;
-      const double desired_yaw = std::atan2(dy, dx);
-      const double err_pos = std::hypot(dx, dy);
-      double err_yaw = desired_yaw - yaw_;
-      err_yaw = std::atan2(std::sin(err_yaw),
-                           std::cos(err_yaw)); // normalize [-pi,pi]
-
-      geometry_msgs::msg::Twist cmd;
-
-      if (err_pos <= dist_precision_) {
-        state_ = "idle";
-        stop();
-        break;
-      } else if (std::fabs(err_yaw) > yaw_precision_) {
-        state_ = "fix yaw";
-        cmd.angular.z = (err_yaw > 0.0) ? 0.65 : -0.65;
-      } else {
-        state_ = "go to point";
-        cmd.linear.x = 0.6;
-        cmd.angular.z = 0.0;
-      }
-
-      pub_cmd_->publish(cmd);
-
-      feedback->current = position_;
-      feedback->state = state_;
-      goal_handle->publish_feedback(feedback);
-
-      rate.sleep();
+    } catch (const std::exception &e) {
+      RCLCPP_ERROR(get_logger(), "Exception: %s", e.what());
     }
 
     stop();
-    result->success = true;
-    goal_handle->succeed(result);
-    RCLCPP_INFO(get_logger(), "Goal succeeded.");
+    std::this_thread::sleep_for(100ms);
+
+    result->success = success;
+    if (success) {
+      goal_handle->succeed(result);
+      RCLCPP_INFO(get_logger(), "Goal succeeded. Robot stopped safely.");
+    } else {
+      stop();
+      goal_handle->abort(result);
+      RCLCPP_ERROR(get_logger(), "Goal aborted or failed! Robot stopped.");
+    }
+
+    stop();
   }
 };
 

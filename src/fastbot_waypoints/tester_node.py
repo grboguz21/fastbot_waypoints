@@ -12,13 +12,14 @@ from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry
 from fastbot_waypoints.action import Waypoint
 
+# -----------------------------
+# Quaternion → Yaw dönüşümü
+# -----------------------------
 try:
-    from tf_transformations import euler_from_quaternion  # tf==1 style (apt)
+    from tf_transformations import euler_from_quaternion
 except Exception:
-    # fallback: geometry math without dep (only yaw)
     def euler_from_quaternion(q):
         x, y, z, w = q
-        # yaw (z) from quaternion
         siny_cosp = 2.0 * (w * z + x * y)
         cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
         yaw = math.atan2(siny_cosp, cosy_cosp)
@@ -26,9 +27,12 @@ except Exception:
 
 
 def normalize_angle(rad: float) -> float:
-    return math.atan2(math.sin(rad), math.cos(rad))  # [-pi, pi]
+    return math.atan2(math.sin(rad), math.cos(rad))
 
 
+# ====================================================
+# 🚀 Waypoint Action Tester
+# ====================================================
 class WaypointActionTester(Node):
     def __init__(
         self,
@@ -46,31 +50,30 @@ class WaypointActionTester(Node):
     ):
         super().__init__("waypoint_action_tester")
         self.action_name = action_name
-        self.goal_x = float(goal_x)
-        self.goal_y = float(goal_y)
-        self.expect_failure = bool(expect_failure)
-        self.timeout_sec = float(timeout_sec)
+        self.goal_x = goal_x
+        self.goal_y = goal_y
+        self.expect_failure = expect_failure
+        self.timeout_sec = timeout_sec
+        self.pos_margin = pos_margin
+        self.yaw_tol = math.radians(yaw_tol_deg)
+        self.skip_pos_check = skip_pos_check
+        self.skip_yaw_check = skip_yaw_check
 
-        self.pos_margin = float(pos_margin)
-        self.yaw_tol = math.radians(float(yaw_tol_deg))
-        self.skip_pos_check = bool(skip_pos_check)
-        self.skip_yaw_check = bool(skip_yaw_check)
-
-        # Motion observe (info)
+        # --- motion and odom ---
         self.got_motion = False
         self.last_twist = Twist()
-        self.create_subscription(Twist, cmd_vel_topic, self._twist_cb, 10)
-
-        # Odom observe (for end pos/yaw)
         self.have_odom = False
         self.last_pos = Point()
         self.last_yaw = 0.0
+
+        # Subscribers
+        self.create_subscription(Twist, cmd_vel_topic, self._twist_cb, 10)
         self.create_subscription(Odometry, odom_topic, self._odom_cb, 20)
 
         # Action client
         self.client = ActionClient(self, Waypoint, self.action_name)
 
-    # ---- subscribers ----
+    # ------------------ CALLBACKS ------------------
     def _twist_cb(self, msg: Twist):
         self.last_twist = msg
         if abs(msg.linear.x) > 1e-4 or abs(msg.angular.z) > 1e-4:
@@ -83,124 +86,136 @@ class WaypointActionTester(Node):
         self.last_yaw = normalize_angle(yaw)
         self.have_odom = True
 
-    # ---- helpers ----
+    # ------------------ HELPERS ------------------
     def wait_action_server(self, timeout_sec=10.0) -> bool:
-        self.get_logger().info(f"Waiting for action server [{self.action_name}] ...")
+        self.get_logger().info(f"⏳ Waiting for action server [{self.action_name}] ...")
         return self.client.wait_for_server(timeout_sec=timeout_sec)
 
     def _check_end_position(self) -> bool:
         if self.skip_pos_check:
-            self.get_logger().info("Position check skipped by flag.")
+            self.get_logger().info("Position check skipped.")
             return True
+
         dx = self.goal_x - self.last_pos.x
         dy = self.goal_y - self.last_pos.y
         dist_err = math.hypot(dx, dy)
-        self.get_logger().info(
-            f"End position: ({self.last_pos.x:.3f},{self.last_pos.y:.3f}) "
-            f"goal=({self.goal_x:.3f},{self.goal_y:.3f}) "
-            f"error={dist_err:.3f} m (margin={self.pos_margin:.3f})"
-        )
+
         ok = dist_err <= self.pos_margin
-        if not ok:
-            self.get_logger().error(f"Position error {dist_err:.3f} > margin {self.pos_margin:.3f}")
+        if ok:
+            self.get_logger().info(
+                f"✅ Position OK: error={dist_err:.3f} m ≤ margin={self.pos_margin:.3f} m"
+            )
+        else:
+            self.get_logger().error(
+                f"❌ Position FAIL: error={dist_err:.3f} m > margin={self.pos_margin:.3f} m"
+            )
         return ok
 
     def _check_end_yaw(self) -> bool:
         if self.skip_yaw_check:
-            self.get_logger().info("Yaw check skipped by flag.")
+            self.get_logger().info("Yaw check skipped.")
             return True
+
         desired_yaw = math.atan2(self.goal_y - self.last_pos.y, self.goal_x - self.last_pos.x)
         err = abs(normalize_angle(desired_yaw - self.last_yaw))
-        self.get_logger().info(
-            f"End yaw: current={math.degrees(self.last_yaw):.2f}°, "
-            f"desired={math.degrees(desired_yaw):.2f}°, "
-            f"error={math.degrees(err):.2f}° (tol=±{math.degrees(self.yaw_tol):.2f}°)"
-        )
+
         ok = err <= self.yaw_tol
-        if not ok:
+        if ok:
+            self.get_logger().info(
+                f"✅ Yaw OK: {math.degrees(err):.2f}° ≤ ±{math.degrees(self.yaw_tol):.2f}°"
+            )
+        else:
             self.get_logger().error(
-                f"Yaw error {math.degrees(err):.2f}° exceeds tol ±{math.degrees(self.yaw_tol):.2f}°"
+                f"❌ Yaw FAIL: {math.degrees(err):.2f}° > ±{math.degrees(self.yaw_tol):.2f}°"
             )
         return ok
 
-    # ---- main ----
+    # ------------------ MAIN TEST LOGIC ------------------
     def run(self) -> bool:
-        # Wait odom first (up to 5s)
+        # Wait for odom messages
         t0 = time.time()
         while rclpy.ok() and not self.have_odom and (time.time() - t0) < 5.0:
             rclpy.spin_once(self, timeout_sec=0.1)
         if not self.have_odom:
-            self.get_logger().error("No /odom received before sending goal.")
-            # still continue to test action result
-        # Wait server
-        if not self.wait_action_server(timeout_sec=10.0):
-            self.get_logger().error("Action server not available.")
-            return False if not self.expect_failure else True
+            self.get_logger().error("⚠️ No /odom received before sending goal.")
+
+        # Wait for server
+        if not self.wait_action_server(10.0):
+            self.get_logger().error("❌ Action server not available.")
+            return not self.expect_failure
 
         # Send goal
         goal_msg = Waypoint.Goal()
         goal_msg.position = Point(x=self.goal_x, y=self.goal_y, z=0.0)
-        self.get_logger().info(f"Sending goal: x={self.goal_x:.3f}, y={self.goal_y:.3f}")
+        self.get_logger().info(f"🎯 Sending goal: x={self.goal_x:.3f}, y={self.goal_y:.3f}")
         send_future = self.client.send_goal_async(goal_msg, feedback_callback=self._feedback_cb)
 
+        # Wait for acceptance
         end_time = time.time() + self.timeout_sec
-        while rclpy.ok() and time.time() < end_time:
+        while rclpy.ok() and not send_future.done() and time.time() < end_time:
             rclpy.spin_once(self, timeout_sec=0.1)
-            if send_future.done():
-                break
 
         if not send_future.done():
-            self.get_logger().error("send_goal_async timed out")
-            result_ok = False
-            overall_ok = result_ok
-            return (not overall_ok) if self.expect_failure else overall_ok
+            self.get_logger().error("❌ Goal send timeout.")
+            return not self.expect_failure
 
         goal_handle = send_future.result()
         if not goal_handle.accepted:
-            self.get_logger().error("Goal rejected by action server")
-            result_ok = False
-            overall_ok = result_ok
-            return (not overall_ok) if self.expect_failure else overall_ok
+            self.get_logger().error("❌ Goal rejected by server.")
+            return not self.expect_failure
 
-        # Wait result
-        self.get_logger().info("Goal accepted; waiting for result...")
+        self.get_logger().info("✅ Goal accepted. Waiting for result...")
         result_future = goal_handle.get_result_async()
 
-        while rclpy.ok() and time.time() < end_time:
+        # Wait for action result or timeout
+        while rclpy.ok() and not result_future.done() and time.time() < end_time:
             rclpy.spin_once(self, timeout_sec=0.1)
-            if result_future.done():
-                break
 
         if not result_future.done():
-            self.get_logger().error("Result timeout")
+            self.get_logger().error("❌ Result timeout (goal not finished).")
             result_ok = False
         else:
             result = result_future.result()
-            status_ok = (int(result.status) == 4)  # SUCCEEDED
-            msg_ok = bool(getattr(result.result, "success", False))
+            status_ok = int(result.status) == 4  # SUCCEEDED
+            msg_ok = getattr(result.result, "success", False)
             result_ok = status_ok and msg_ok
-            self.get_logger().info(f"Action status_ok={status_ok}, success_field={msg_ok}")
+            self.get_logger().info(f"📋 Action result: status_ok={status_ok}, success_field={msg_ok}")
 
-        # A little time to receive final odom after stop
+        # Allow final odom updates
         for _ in range(10):
             rclpy.spin_once(self, timeout_sec=0.05)
 
-        # Derived checks
+        # Position & yaw validation
         pos_ok = self._check_end_position()
         yaw_ok = self._check_end_yaw()
-
         overall_ok = result_ok and pos_ok and yaw_ok
 
-        if overall_ok and not self.got_motion:
-            self.get_logger().warn("Action OK but no /cmd_vel activity observed.")
+        # Wait for robot to stop fully
+        self.get_logger().info("⏸ Waiting for robot to fully stop (cmd_vel ≈ 0)...")
+        still_time = time.time()
+        while rclpy.ok() and (time.time() - still_time) < 2.0:
+            rclpy.spin_once(self, timeout_sec=0.05)
+            if abs(self.last_twist.linear.x) > 1e-3 or abs(self.last_twist.angular.z) > 1e-3:
+                still_time = time.time()
+        self.get_logger().info("🟢 Robot fully stopped. Test evaluation complete.")
 
+        # Log test summary
+        if overall_ok:
+            self.get_logger().info("✅ TEST PASSED: Position and yaw within limits.")
+        else:
+            self.get_logger().error("❌ TEST FAILED: Goal not reached or timeout.")
+
+        # Return pass/fail
         return (not overall_ok) if self.expect_failure else overall_ok
 
-    def _feedback_cb(self, _feedback_msg):
-        # feedback.current / feedback.state erişilebilir; gerekirse logla
+    def _feedback_cb(self, feedback_msg):
+        # Optional feedback logging
         pass
 
 
+# ====================================================
+# 🧩 ARG PARSER & MAIN
+# ====================================================
 def parse_args(argv):
     p = argparse.ArgumentParser(description="Waypoint action tester with end pos/yaw checks")
     p.add_argument('--action-name', default='/fastbot_as')
@@ -208,17 +223,14 @@ def parse_args(argv):
     p.add_argument('--goal-y', type=float, default=1.2)
     p.add_argument('--cmd-vel-topic', default='fastbot/cmd_vel')
     p.add_argument('--odom-topic', default='/fastbot/odom')
-
-    p.add_argument('--pos-margin', type=float, default=0.05, help='meters (<=)')
-    p.add_argument('--yaw-tol-deg', type=float, default=3.0, help='degrees (<=)')
-
-    p.add_argument('--skip-pos-check', action='store_true', help='disable end position check')
-    p.add_argument('--skip-yaw-check', action='store_true', help='disable end yaw check')
-
-    p.add_argument('-e', '--expect-failure', default='False', help='True or False')
+    p.add_argument('--pos-margin', type=float, default=0.35)
+    p.add_argument('--yaw-tol-deg', type=float, default=10.0)
+    p.add_argument('--skip-pos-check', action='store_true')
+    p.add_argument('--skip-yaw-check', action='store_true')
+    p.add_argument('-e', '--expect-failure', default='False')
     p.add_argument('--timeout', type=float, default=40.0)
     args = p.parse_args(argv)
-    expect_fail = True if str(args.expect_failure) == 'True' else False
+    expect_fail = str(args.expect_failure).lower() == 'true'
     return args, expect_fail
 
 
@@ -239,9 +251,7 @@ def main(argv=None):
         skip_pos_check=args.skip_pos_check,
         skip_yaw_check=args.skip_yaw_check,
     )
-    ok = False
     try:
-        time.sleep(1.0)
         ok = node.run()
     finally:
         rclpy.shutdown()

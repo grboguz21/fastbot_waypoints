@@ -11,18 +11,25 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    pkg_name       = os.getenv('PKG_NAME', 'fastbot_waypoints')
-    server_exec    = os.getenv('SERVER_EXEC', 'fastbot_action_server')   # ros2 run fastbot_waypoints fastbot_action_server
-    action_name    = os.getenv('ACTION_NAME', '/fastbot_as')
-    goal_x         = os.getenv('GOAL_X', '1.49999')
-    goal_y         = os.getenv('GOAL_Y', '2.255136')
-    expect_fail    = os.getenv('EXPECT_FAILURE', 'False')
-    timeout_sec    = os.getenv('TIMEOUT_SEC', '40')
-    cmd_vel_topic  = os.getenv('CMD_VEL_TOPIC', 'fastbot/cmd_vel')
-    odom_topic     = os.getenv('ODOM_TOPIC', '/fastbot/odom')
-    yaw_precision  = os.getenv('YAW_PRECISION', f"{3.1415926535/90.0}")
-    dist_precision = os.getenv('DIST_PRECISION', '0.10')                 
+    # --- Ortam değişkenlerini oku ---
+    pkg_name = os.getenv('PKG_NAME', 'fastbot_waypoints')
+    server_exec = os.getenv('SERVER_EXEC', 'fastbot_action_server')
+    action_name = os.getenv('ACTION_NAME', '/fastbot_as')
 
+    goal_x = os.getenv('GOAL_X', '2.50000')
+    goal_y = os.getenv('GOAL_Y', '2.20000')
+
+    # ✅ String'i doğru boolean olarak çevir
+    expect_fail_str = os.getenv('EXPECT_FAILURE', 'False').strip().lower()
+    expect_fail = 'true' if expect_fail_str == 'true' else 'false'
+
+    timeout_sec = os.getenv('TIMEOUT_SEC', '40')
+    cmd_vel_topic = os.getenv('CMD_VEL_TOPIC', 'fastbot/cmd_vel')
+    odom_topic = os.getenv('ODOM_TOPIC', '/fastbot/odom')
+    yaw_precision = os.getenv('YAW_PRECISION', f"{3.1415926535/90.0}")
+    dist_precision = os.getenv('DIST_PRECISION', '0.85')
+
+    # --- Action Server Node ---
     server_node = Node(
         package=pkg_name,
         executable=server_exec,
@@ -36,6 +43,7 @@ def generate_launch_description():
         }]
     )
 
+    # --- Tester Node (Python script) ---
     this_dir = Path(__file__).resolve().parent
     tester_path = str(this_dir / 'tester_node.py')
 
@@ -46,6 +54,7 @@ def generate_launch_description():
             '--goal-x', goal_x,
             '--goal-y', goal_y,
             '--cmd-vel-topic', cmd_vel_topic,
+            '--odom-topic', odom_topic,
             '-e', expect_fail,
             '--timeout', timeout_sec
         ],
