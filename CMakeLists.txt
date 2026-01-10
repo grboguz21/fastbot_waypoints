@@ -57,6 +57,37 @@ ament_export_dependencies(rosidl_default_runtime)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  add_subdirectory(src/fastbot_waypoints)
+
+  set(TESTFILES
+      test/main.cpp
+      test/control_node_test.cpp
+  )
+
+  # Test executable
+  ament_add_gtest(${PROJECT_NAME}_test ${TESTFILES})
+
+  # Test includes
+  target_include_directories(${PROJECT_NAME}_test PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp>
+    $<INSTALL_INTERFACE:include>
+  )
+
+  # Test dependencies
+  ament_target_dependencies(${PROJECT_NAME}_test
+    rclcpp
+    rclcpp_action
+    geometry_msgs
+    nav_msgs
+    tf2
+  )
+
+  # Action typesupport MUST be linked
+  target_link_libraries(${PROJECT_NAME}_test
+    ${PROJECT_NAME}__rosidl_typesupport_cpp
+  )
 endif()
+
+
+
+
 ament_package()

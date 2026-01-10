@@ -1,13 +1,45 @@
-passing condition: 
-    In test_system_launch.py file change the params like below:
-        goal_x         = os.getenv('GOAL_X', '1.8')
-        goal_y         = os.getenv('GOAL_Y', '1.2')
+error_pos: 0.051->0.06
+error_yaw: 0.025->0.03
+
+PASSING CONDITION
+-------------------
+user:~/ros2_ws$ ros2 action send_goal /fastbot_as fastbot_waypoints/action/Waypoint "{position: {x: 1.4, y: 1.0, z: 0.0}}"
+Waiting for an action server to become available...
+Sending goal:
+     position:
+  x: 1.4
+  y: 1.0
+  z: 0.0
+
+Goal accepted with ID: c45bae006a7d4d32be20e170a718ee72
+
+Result:
+    success: true
+
+Goal finished with status: SUCCEEDED
+user:~/ros2_ws$ ros2 action send_goal /fastbot_as fastbot_waypoints/action/Waypoint "{position: {x: 1.4, y: 1.0, z: 0.0}}"
+Waiting for an action server to become available...
+Sending goal:
+     position:
+  x: 1.4
+  y: 1.0
+  z: 0.0
+
+Goal accepted with ID: c45bae006a7d4d32be20e170a718ee72
+
+Result:
+    success: true
+
+Goal finished with status: SUCCEEDED
 
 
 
 
-failing condition: 
-    In test_system_launch.py file change the params like below:
-        goal_x         = os.getenv('GOAL_X', '1.49999')
-        goal_y         = os.getenv('GOAL_Y', '2.255136')
+
+
+
+FAILLING CONDITION
+-------------------
+user:~/ros2_ws$ ros2 action send_goal /fastbot_as 
+fastbot_waypoints/action/Waypoint "{position: {x: 2.5, y: 2.2, z: 0.0}}"
 
