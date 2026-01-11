@@ -53,8 +53,14 @@ protected:
 
     // ---------------- SEND GOAL (ONCE) ----------------
     goal_ = std::make_shared<Waypoint::Goal>();
-    goal_->position.x = 2.5;
-    goal_->position.y = 2.2;
+
+    // // failling
+    // goal_->position.x = 1.8;
+    // goal_->position.y = 1.2;
+
+    // passing
+    goal_->position.x = 1.4;
+    goal_->position.y = 1.1;
 
     auto goal_future = client_->async_send_goal(*goal_);
     ASSERT_EQ(rclcpp::spin_until_future_complete(node_, goal_future),
@@ -98,10 +104,11 @@ TEST_F(FastbotActionTest, RobotReachesCorrectPosition) {
 
   double dx = last_x_ - goal_->position.x;
   double dy = last_y_ - goal_->position.y;
-  double error = std::hypot(dx, dy);
+  double error = std::sqrt(dx * dx + dy * dy);
+  //   double error_ = 0.02;
 
   std::cout << "[TEST][POS] error = " << error << std::endl;
-  EXPECT_LT(error, 0.05);
+  EXPECT_LT(error, 0.048);
 }
 
 // ============================
@@ -116,6 +123,7 @@ TEST_F(FastbotActionTest, RobotReachesCorrectYaw) {
 
   double desired_yaw = std::atan2(dy, dx);
   double yaw_error = normalizeYaw(desired_yaw - last_yaw_);
+  //   double yaw_error_ = 0.03;
 
   std::cout << "[TEST][YAW] "
             << "desired=" << desired_yaw << " actual=" << last_yaw_

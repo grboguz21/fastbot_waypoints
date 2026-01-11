@@ -22,7 +22,7 @@ Waiting for an action server to become available...
 Sending goal:
      position:
   x: 1.4
-  y: 1.0
+  y: 1.1
   z: 0.0
 
 Goal accepted with ID: c45bae006a7d4d32be20e170a718ee72
