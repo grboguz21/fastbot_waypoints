@@ -54,11 +54,7 @@ protected:
     // ---------------- SEND GOAL (ONCE) ----------------
     goal_ = std::make_shared<Waypoint::Goal>();
 
-    // // failling
-    // goal_->position.x = 1.8;
-    // goal_->position.y = 1.2;
-
-    // passing
+    // // passing
     goal_->position.x = 1.4;
     goal_->position.y = 1.1;
 
