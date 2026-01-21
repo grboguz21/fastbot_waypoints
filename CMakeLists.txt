@@ -5,87 +5,89 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
-# ---------------- FIND DEPENDENCIES ----------------
 find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+# Eğer istersen: find_package(rosidl_default_runtime REQUIRED)
+
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
 
-# ---------------- GENERATE ACTION ----------------
+# 1) Action arayüzlerini ÜRET (executable’dan ÖNCE)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/Waypoint.action"
   DEPENDENCIES geometry_msgs
 )
 
-# ---------------- SERVER EXECUTABLE ----------------
+# 2) Executable
 add_executable(fastbot_action_server src/fastbot_action_server.cpp)
-
 ament_target_dependencies(fastbot_action_server
-  rclcpp
-  rclcpp_action
-  geometry_msgs
-  nav_msgs
-  sensor_msgs
-  tf2
+  rclcpp rclcpp_action geometry_msgs nav_msgs tf2
 )
 
+# 3) Build sırası bağımlılıkları
 add_dependencies(fastbot_action_server
   ${PROJECT_NAME}__rosidl_generator_cpp
+  ${PROJECT_NAME}__rosidl_typesupport_cpp   # ← typesupport hazır olsun
+)
+
+# 4) Include path (build-time jenerik başlıklar)
+target_include_directories(fastbot_action_server PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp>
+  $<INSTALL_INTERFACE:include>
+)
+
+# 5) Doğrudan typesupport kütüphanesini linkle (makro kullanmadan)
+target_link_libraries(fastbot_action_server
   ${PROJECT_NAME}__rosidl_typesupport_cpp
 )
 
-rosidl_target_interfaces(fastbot_action_server
-  ${PROJECT_NAME} "rosidl_typesupport_cpp"
-)
-
-# ---------------- INSTALL SERVER ----------------
 install(TARGETS fastbot_action_server
-  DESTINATION lib/${PROJECT_NAME}
-)
+  DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY
-  launch
-  DESTINATION share/${PROJECT_NAME}/
+ launch
+ DESTINATION share/${PROJECT_NAME}/
 )
 
 ament_export_dependencies(rosidl_default_runtime)
 
-# ---------------- TESTS ----------------
+
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  find_package(rclcpp REQUIRED)
-  find_package(rclcpp_action REQUIRED)
-  find_package(nav_msgs REQUIRED)
-  find_package(geometry_msgs REQUIRED)
 
   set(TESTFILES
-    test/main.cpp
-    test/control_node_test.cpp
+      test/main.cpp
+      test/control_node_test.cpp
   )
 
+  # Test executable
   ament_add_gtest(${PROJECT_NAME}_test ${TESTFILES})
 
-  if(TARGET ${PROJECT_NAME}_test)
-    ament_target_dependencies(${PROJECT_NAME}_test
-      rclcpp
-      rclcpp_action
-      nav_msgs
-      geometry_msgs
-    )
+  # Test includes
+  target_include_directories(${PROJECT_NAME}_test PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp>
+    $<INSTALL_INTERFACE:include>
+  )
 
-    add_dependencies(${PROJECT_NAME}_test
-      ${PROJECT_NAME}__rosidl_generator_cpp
-      ${PROJECT_NAME}__rosidl_typesupport_cpp
-    )
-  endif()
+  # Test dependencies
+  ament_target_dependencies(${PROJECT_NAME}_test
+    rclcpp
+    rclcpp_action
+    geometry_msgs
+    nav_msgs
+    tf2
+  )
+
+  # Action typesupport MUST be linked
+  target_link_libraries(${PROJECT_NAME}_test
+    ${PROJECT_NAME}__rosidl_typesupport_cpp
+  )
 endif()
+
+
+
 
 ament_package()
