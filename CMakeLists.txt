@@ -14,7 +14,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2 REQUIRED)
-
+find_package(sensor_msgs REQUIRED)   # <-- ekle
 # 1) Action arayüzlerini ÜRET (executable’dan ÖNCE)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/Waypoint.action"
@@ -24,7 +24,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 # 2) Executable
 add_executable(fastbot_action_server src/fastbot_action_server.cpp)
 ament_target_dependencies(fastbot_action_server
-  rclcpp rclcpp_action geometry_msgs nav_msgs tf2
+  rclcpp rclcpp_action geometry_msgs nav_msgs tf2 sensor_msgs        
 )
 
 # 3) Build sırası bağımlılıkları
@@ -79,6 +79,7 @@ if(BUILD_TESTING)
     geometry_msgs
     nav_msgs
     tf2
+	sensor_msgs        
   )
 
   # Action typesupport MUST be linked
